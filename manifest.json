@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "e09acb0e-a4b2-45b6-8081-554dbc761904",
+    "name": "Letterboxd Collections",
+    "description": "Automatically creates and refreshes Jellyfin collections from a Letterboxd user's public lists and watchlist, on Jellyfin's own scheduled task runner.",
+    "overview": "Auto-syncs Letterboxd lists/watchlist into native Jellyfin collections",
+    "owner": "DarranS360",
+    "category": "Metadata",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "Initial release: auto-discovers Letterboxd lists and watchlist, creates/updates matching Jellyfin collections on Jellyfin's own scheduled task runner.",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/DarranS360/jellyfin-letterboxd-plugin/releases/download/v1.0.0.0/letterboxd-collections-1.0.0.0.zip",
+        "checksum": "94544ab1db87b2ff88ef3c06ee037982",
+        "timestamp": "2026-07-12T18:54:00.0000000Z"
+      }
+    ]
+  }
+]
