@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Letterboxd Collections</title>
+</head>
+<body>
+    <div id="LetterboxdSyncConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="LetterboxdSyncConfigForm">
+                    <div class="verticalSection">
+                        <h2>Letterboxd Collections</h2>
+                        <p>Automatically creates and refreshes Jellyfin collections from a Letterboxd user's public lists and watchlist, on Jellyfin's own scheduled task runner.</p>
+                    </div>
+
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="LetterboxdUsername" label="Letterboxd username" />
+                        <div class="fieldDescription">The public Letterboxd profile to sync from, e.g. "darrans360".</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="IncludeWatchlist" />
+                            <span>Sync watchlist</span>
+                        </label>
+                        <div class="fieldDescription">Creates a "&lt;username&gt; Watchlist" collection alongside your named lists.</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="AutoDiscoverLists" />
+                            <span>Auto-discover lists</span>
+                        </label>
+                        <div class="fieldDescription">Scans the user's public lists page and creates/updates a collection for every list found - new lists show up automatically.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="ExcludedListSlugs" label="Excluded list slugs (comma-separated)" />
+                        <div class="fieldDescription">List slugs to skip during auto-discovery, e.g. "watched,diary-2025". Find a slug in the list's URL: letterboxd.com/username/list/&lt;slug&gt;/</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="RemoveDeletedItems" />
+                            <span>Remove films dropped from a list</span>
+                        </label>
+                        <div class="fieldDescription">When on, each sync fully matches the collection to the current list contents (adds and removes). When off, films are only ever added.</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="GenerateCoverArt" />
+                            <span>Generate cover art</span>
+                        </label>
+                        <div class="fieldDescription">Builds a poster-strip cover image for collections that don't already have one. Never overwrites a manually-set image.</div>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            var LetterboxdSyncPluginId = "e09acb0e-a4b2-45b6-8081-554dbc761904";
+
+            document.querySelector('#LetterboxdSyncConfigPage')
+                .addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(LetterboxdSyncPluginId).then(function (config) {
+                        document.querySelector('#LetterboxdUsername').value = config.LetterboxdUsername || '';
+                        document.querySelector('#IncludeWatchlist').checked = config.IncludeWatchlist;
+                        document.querySelector('#AutoDiscoverLists').checked = config.AutoDiscoverLists;
+                        document.querySelector('#ExcludedListSlugs').value = config.ExcludedListSlugs || '';
+                        document.querySelector('#RemoveDeletedItems').checked = config.RemoveDeletedItems;
+                        document.querySelector('#GenerateCoverArt').checked = config.GenerateCoverArt;
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+            document.querySelector('#LetterboxdSyncConfigForm')
+                .addEventListener('submit', function (e) {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(LetterboxdSyncPluginId).then(function (config) {
+                        config.LetterboxdUsername = document.querySelector('#LetterboxdUsername').value;
+                        config.IncludeWatchlist = document.querySelector('#IncludeWatchlist').checked;
+                        config.AutoDiscoverLists = document.querySelector('#AutoDiscoverLists').checked;
+                        config.ExcludedListSlugs = document.querySelector('#ExcludedListSlugs').value;
+                        config.RemoveDeletedItems = document.querySelector('#RemoveDeletedItems').checked;
+                        config.GenerateCoverArt = document.querySelector('#GenerateCoverArt').checked;
+
+                        ApiClient.updatePluginConfiguration(LetterboxdSyncPluginId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+
+                    e.preventDefault();
+                    return false;
+                });
+        </script>
+    </div>
+</body>
+</html>
