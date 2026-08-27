@@ -4,13 +4,13 @@
     <title>Letterboxd Collections</title>
 </head>
 <body>
-    <div id="LetterboxdSyncConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+    <div id="LetterboxdSyncConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
         <div data-role="content">
             <div class="content-primary">
                 <form id="LetterboxdSyncConfigForm">
                     <div class="verticalSection">
                         <h2>Letterboxd Collections</h2>
-                        <p>Automatically creates and refreshes Jellyfin collections from a Letterboxd user's public lists and watchlist, on Jellyfin's own scheduled task runner.</p>
+                        <p>Automatically creates and refreshes Jellyfin playlists or collections from a Letterboxd user's public lists and watchlist, on Jellyfin's own scheduled task runner.</p>
                     </div>
 
                     <div class="inputContainer">
@@ -18,12 +18,33 @@
                         <div class="fieldDescription">The public Letterboxd profile to sync from, e.g. "cinephile42".</div>
                     </div>
 
+                    <div class="selectContainer">
+                        <select is="emby-select" id="SyncTarget" label="Sync each list to">
+                            <option value="playlist">Playlists</option>
+                            <option value="collection">Collections</option>
+                        </select>
+                        <div class="fieldDescription">Playlists are ordered and owned by a specific user. Collections are library-wide with no owner.</div>
+                    </div>
+
+                    <div class="selectContainer" id="PlaylistOwnerContainer">
+                        <select is="emby-select" id="PlaylistOwnerUserId" label="Playlist owner"></select>
+                        <div class="fieldDescription">The Jellyfin user who will own created playlists.</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription" id="MakePlaylistsPublicContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="MakePlaylistsPublic" />
+                            <span>Make playlists visible to everyone</span>
+                        </label>
+                        <div class="fieldDescription">When off, only the owner above can see the created playlists.</div>
+                    </div>
+
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label>
                             <input is="emby-checkbox" type="checkbox" id="IncludeWatchlist" />
                             <span>Sync watchlist</span>
                         </label>
-                        <div class="fieldDescription">Creates a "&lt;username&gt; Watchlist" collection alongside your named lists.</div>
+                        <div class="fieldDescription">Creates a "&lt;username&gt; Watchlist" playlist/collection alongside your named lists.</div>
                     </div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
@@ -31,7 +52,7 @@
                             <input is="emby-checkbox" type="checkbox" id="AutoDiscoverLists" />
                             <span>Auto-discover lists</span>
                         </label>
-                        <div class="fieldDescription">Scans the user's public lists page and creates/updates a collection for every list found - new lists show up automatically.</div>
+                        <div class="fieldDescription">Scans the user's public lists page and creates/updates an entry for every list found - new lists show up automatically.</div>
                     </div>
 
                     <div class="inputContainer">
@@ -44,7 +65,7 @@
                             <input is="emby-checkbox" type="checkbox" id="RemoveDeletedItems" />
                             <span>Remove films dropped from a list</span>
                         </label>
-                        <div class="fieldDescription">When on, each sync fully matches the collection to the current list contents (adds and removes). When off, films are only ever added.</div>
+                        <div class="fieldDescription">When on, each sync fully matches the playlist/collection to the current list contents (adds and removes). When off, films are only ever added.</div>
                     </div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
@@ -52,7 +73,7 @@
                             <input is="emby-checkbox" type="checkbox" id="GenerateCoverArt" />
                             <span>Generate cover art</span>
                         </label>
-                        <div class="fieldDescription">Builds a poster-strip cover image for collections that don't already have one. Never overwrites a manually-set image.</div>
+                        <div class="fieldDescription">Builds a poster-strip cover image for playlists/collections that don't already have one. Never overwrites a manually-set image.</div>
                     </div>
 
                     <div>
@@ -61,30 +82,75 @@
                         </button>
                     </div>
                 </form>
+
+                <div class="verticalSection">
+                    <h3>Manual sync</h3>
+                    <p class="fieldDescription">Runs the same sync the schedule below runs automatically. Save your settings first if you just changed them.</p>
+                    <button is="emby-button" type="button" id="RunSyncNowButton" class="raised block emby-button">
+                        <span>Run sync now</span>
+                    </button>
+                    <p id="SyncStatusMessage" class="fieldDescription"></p>
+                </div>
             </div>
         </div>
         <script type="text/javascript">
             var LetterboxdSyncPluginId = "e09acb0e-a4b2-45b6-8081-554dbc761904";
+            var LetterboxdSyncTaskKey = "LetterboxdSyncCollections";
+
+            function toggleTargetFields() {
+                var isPlaylist = document.querySelector('#SyncTarget').value === 'playlist';
+                document.querySelector('#PlaylistOwnerContainer').style.display = isPlaylist ? '' : 'none';
+                document.querySelector('#MakePlaylistsPublicContainer').style.display = isPlaylist ? '' : 'none';
+            }
+
+            function loadUsers(selectedUserId) {
+                return ApiClient.getUsers().then(function (users) {
+                    var select = document.querySelector('#PlaylistOwnerUserId');
+                    select.innerHTML = '';
+                    users.forEach(function (user) {
+                        var option = document.createElement('option');
+                        option.value = user.Id;
+                        option.text = user.Name;
+                        select.appendChild(option);
+                    });
+                    if (selectedUserId) {
+                        select.value = selectedUserId;
+                    }
+                });
+            }
 
             document.querySelector('#LetterboxdSyncConfigPage')
                 .addEventListener('pageshow', function () {
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(LetterboxdSyncPluginId).then(function (config) {
                         document.querySelector('#LetterboxdUsername').value = config.LetterboxdUsername || '';
+                        document.querySelector('#SyncTarget').value = config.SyncTarget || 'playlist';
+                        document.querySelector('#MakePlaylistsPublic').checked = config.MakePlaylistsPublic;
                         document.querySelector('#IncludeWatchlist').checked = config.IncludeWatchlist;
                         document.querySelector('#AutoDiscoverLists').checked = config.AutoDiscoverLists;
                         document.querySelector('#ExcludedListSlugs').value = config.ExcludedListSlugs || '';
                         document.querySelector('#RemoveDeletedItems').checked = config.RemoveDeletedItems;
                         document.querySelector('#GenerateCoverArt').checked = config.GenerateCoverArt;
-                        Dashboard.hideLoadingMsg();
+
+                        var emptyGuid = '00000000-0000-0000-0000-000000000000';
+                        var ownerId = (config.PlaylistOwnerUserId && config.PlaylistOwnerUserId !== emptyGuid) ? config.PlaylistOwnerUserId : null;
+                        loadUsers(ownerId).then(function () {
+                            toggleTargetFields();
+                            Dashboard.hideLoadingMsg();
+                        });
                     });
                 });
+
+            document.querySelector('#SyncTarget').addEventListener('change', toggleTargetFields);
 
             document.querySelector('#LetterboxdSyncConfigForm')
                 .addEventListener('submit', function (e) {
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(LetterboxdSyncPluginId).then(function (config) {
                         config.LetterboxdUsername = document.querySelector('#LetterboxdUsername').value;
+                        config.SyncTarget = document.querySelector('#SyncTarget').value;
+                        config.PlaylistOwnerUserId = document.querySelector('#PlaylistOwnerUserId').value;
+                        config.MakePlaylistsPublic = document.querySelector('#MakePlaylistsPublic').checked;
                         config.IncludeWatchlist = document.querySelector('#IncludeWatchlist').checked;
                         config.AutoDiscoverLists = document.querySelector('#AutoDiscoverLists').checked;
                         config.ExcludedListSlugs = document.querySelector('#ExcludedListSlugs').value;
@@ -99,6 +165,43 @@
                     e.preventDefault();
                     return false;
                 });
+
+            function pollTask(taskId) {
+                var statusEl = document.querySelector('#SyncStatusMessage');
+                var poll = setInterval(function () {
+                    ApiClient.getScheduledTask(taskId).then(function (task) {
+                        if (task.State === 'Idle') {
+                            clearInterval(poll);
+                            var result = task.LastExecutionResult;
+                            if (result && result.Status === 'Completed') {
+                                statusEl.textContent = 'Sync completed.';
+                            } else if (result) {
+                                statusEl.textContent = 'Sync finished with status: ' + result.Status + '. Check the server log for details.';
+                            } else {
+                                statusEl.textContent = 'Sync finished.';
+                            }
+                        } else {
+                            statusEl.textContent = 'Sync running...';
+                        }
+                    });
+                }, 1500);
+            }
+
+            document.querySelector('#RunSyncNowButton').addEventListener('click', function () {
+                var statusEl = document.querySelector('#SyncStatusMessage');
+                statusEl.textContent = 'Starting sync...';
+                ApiClient.getScheduledTasks().then(function (tasks) {
+                    var task = tasks.filter(function (t) { return t.Key === LetterboxdSyncTaskKey; })[0];
+                    if (!task) {
+                        statusEl.textContent = 'Could not find the sync task. Try reloading this page.';
+                        return;
+                    }
+                    ApiClient.startScheduledTask(task.Id).then(function () {
+                        statusEl.textContent = 'Sync running...';
+                        pollTask(task.Id);
+                    });
+                });
+            });
         </script>
     </div>
 </body>

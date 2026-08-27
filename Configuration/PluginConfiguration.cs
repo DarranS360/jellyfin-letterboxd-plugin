@@ -1,3 +1,4 @@
+using System;
 using MediaBrowser.Model.Plugins;
 
 namespace Jellyfin.Plugin.LetterboxdSync.Configuration;
@@ -8,6 +9,24 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the Letterboxd username whose lists/watchlist should be synced.
     /// </summary>
     public string LetterboxdUsername { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets what each Letterboxd list syncs to: "playlist" or "collection".
+    /// </summary>
+    public string SyncTarget { get; set; } = "playlist";
+
+    /// <summary>
+    /// Gets or sets the id of the Jellyfin user who owns any created playlists.
+    /// Required when <see cref="SyncTarget"/> is "playlist". Ignored for collections,
+    /// which are library-wide and have no single owner.
+    /// </summary>
+    public Guid PlaylistOwnerUserId { get; set; } = Guid.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether created playlists are visible to every
+    /// user, not just the owner set in <see cref="PlaylistOwnerUserId"/>.
+    /// </summary>
+    public bool MakePlaylistsPublic { get; set; } = true;
 
     /// <summary>
     /// Gets or sets a value indicating whether the user's watchlist should be synced

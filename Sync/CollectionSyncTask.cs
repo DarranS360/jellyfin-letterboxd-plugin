@@ -1,12 +1,16 @@
+using Jellyfin.Data;
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.LetterboxdSync.Imaging;
 using Jellyfin.Plugin.LetterboxdSync.Letterboxd;
 using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Playlists;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
@@ -18,6 +22,8 @@ public class CollectionSyncTask : IScheduledTask
 {
     private readonly ILibraryManager _libraryManager;
     private readonly ICollectionManager _collectionManager;
+    private readonly IPlaylistManager _playlistManager;
+    private readonly IUserManager _userManager;
     private readonly IProviderManager _providerManager;
     private readonly ILogger<CollectionSyncTask> _logger;
     private readonly LetterboxdClient _client;
@@ -25,22 +31,26 @@ public class CollectionSyncTask : IScheduledTask
     public CollectionSyncTask(
         ILibraryManager libraryManager,
         ICollectionManager collectionManager,
+        IPlaylistManager playlistManager,
+        IUserManager userManager,
         IProviderManager providerManager,
         IHttpClientFactory httpClientFactory,
         ILogger<CollectionSyncTask> logger)
     {
         _libraryManager = libraryManager;
         _collectionManager = collectionManager;
+        _playlistManager = playlistManager;
+        _userManager = userManager;
         _providerManager = providerManager;
         _logger = logger;
         _client = new LetterboxdClient(httpClientFactory.CreateClient(), logger);
     }
 
-    public string Name => "Sync Letterboxd Collections";
+    public string Name => "Sync Letterboxd";
 
     public string Key => "LetterboxdSyncCollections";
 
-    public string Description => "Fetches your Letterboxd lists and watchlist, and creates/updates matching Jellyfin collections.";
+    public string Description => "Fetches your Letterboxd lists and watchlist, and creates/updates matching Jellyfin playlists or collections.";
 
     public string Category => "Library";
 
@@ -65,6 +75,18 @@ public class CollectionSyncTask : IScheduledTask
         {
             _logger.LogWarning("Letterboxd Sync: no username configured, skipping.");
             return;
+        }
+
+        var usePlaylists = string.Equals(config.SyncTarget, "playlist", StringComparison.OrdinalIgnoreCase);
+        Guid ownerId = default;
+        if (usePlaylists)
+        {
+            ownerId = ResolvePlaylistOwner(config);
+            if (ownerId == Guid.Empty)
+            {
+                _logger.LogWarning("Letterboxd Sync: no playlist owner configured and no admin user found, skipping.");
+                return;
+            }
         }
 
         var excluded = new HashSet<string>(
@@ -103,7 +125,15 @@ public class CollectionSyncTask : IScheduledTask
                 var content = await fetch(cancellationToken).ConfigureAwait(false);
                 if (content is not null)
                 {
-                    await SyncCollectionAsync(overrideName ?? content.Title, content, config, cancellationToken).ConfigureAwait(false);
+                    var name = overrideName ?? content.Title;
+                    if (usePlaylists)
+                    {
+                        await SyncAsPlaylistAsync(name, content, config, ownerId, cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await SyncAsCollectionAsync(name, content, config, cancellationToken).ConfigureAwait(false);
+                    }
                 }
                 else
                 {
@@ -121,7 +151,18 @@ public class CollectionSyncTask : IScheduledTask
         progress.Report(100);
     }
 
-    private async Task SyncCollectionAsync(string collectionName, LetterboxdListContent content, Configuration.PluginConfiguration config, CancellationToken cancellationToken)
+    private Guid ResolvePlaylistOwner(Configuration.PluginConfiguration config)
+    {
+        if (config.PlaylistOwnerUserId != Guid.Empty)
+        {
+            return config.PlaylistOwnerUserId;
+        }
+
+        var admin = _userManager.GetUsers().FirstOrDefault(u => u.HasPermission(PermissionKind.IsAdministrator));
+        return admin?.Id ?? Guid.Empty;
+    }
+
+    private List<Guid> MatchFilms(LetterboxdListContent content, string logName)
     {
         var matchedIds = new List<Guid>();
         foreach (var film in content.Films)
@@ -143,9 +184,16 @@ public class CollectionSyncTask : IScheduledTask
 
         _logger.LogInformation(
             "Letterboxd Sync: '{Name}' - {Matched}/{Total} films matched in library",
-            collectionName,
+            logName,
             matchedIds.Count,
             content.Films.Count);
+
+        return matchedIds;
+    }
+
+    private async Task SyncAsCollectionAsync(string collectionName, LetterboxdListContent content, Configuration.PluginConfiguration config, CancellationToken cancellationToken)
+    {
+        var matchedIds = MatchFilms(content, collectionName);
 
         var existing = _libraryManager.GetItemList(new InternalItemsQuery
         {
@@ -196,7 +244,68 @@ public class CollectionSyncTask : IScheduledTask
         }
     }
 
-    private async Task GenerateCoverArtAsync(BoxSet boxSet, IReadOnlyList<Guid> itemIds, string collectionName, CancellationToken cancellationToken)
+    private async Task SyncAsPlaylistAsync(string playlistName, LetterboxdListContent content, Configuration.PluginConfiguration config, Guid ownerId, CancellationToken cancellationToken)
+    {
+        var matchedIds = MatchFilms(content, playlistName);
+
+        var existing = _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            IncludeItemTypes = [BaseItemKind.Playlist],
+            Recursive = true,
+            Name = playlistName
+        }).OfType<Playlist>().FirstOrDefault();
+
+        Playlist playlist;
+        if (existing is null)
+        {
+            var result = await _playlistManager.CreatePlaylist(new PlaylistCreationRequest
+            {
+                Name = playlistName,
+                ItemIdList = matchedIds,
+                UserId = ownerId,
+                Public = config.MakePlaylistsPublic
+            }).ConfigureAwait(false);
+
+            playlist = (Playlist)_libraryManager.GetItemById(Guid.Parse(result.Id))!;
+        }
+        else
+        {
+            playlist = existing;
+            var currentEntries = playlist.GetManageableItems().ToList();
+            var currentIds = currentEntries.Select(e => e.Item2.Id).ToHashSet();
+
+            if (config.RemoveDeletedItems)
+            {
+                var toRemove = currentEntries
+                    .Where(e => !matchedIds.Contains(e.Item2.Id))
+                    .Select(e => e.Item1.ItemId!.Value.ToString("N"))
+                    .ToArray();
+                if (toRemove.Length > 0)
+                {
+                    await _playlistManager.RemoveItemFromPlaylistAsync(playlist.Id.ToString("N"), toRemove).ConfigureAwait(false);
+                }
+            }
+
+            var toAdd = matchedIds.Where(id => !currentIds.Contains(id)).ToList();
+            if (toAdd.Count > 0)
+            {
+                await _playlistManager.AddItemToPlaylistAsync(playlist.Id, toAdd, ownerId).ConfigureAwait(false);
+            }
+        }
+
+        if (!string.IsNullOrEmpty(content.Description) && string.IsNullOrEmpty(playlist.Overview))
+        {
+            playlist.Overview = content.Description;
+            await _libraryManager.UpdateItemAsync(playlist, playlist.GetParent(), ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (config.GenerateCoverArt && !playlist.HasImage(ImageType.Primary, 0))
+        {
+            await GenerateCoverArtAsync(playlist, matchedIds, playlistName, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task GenerateCoverArtAsync(BaseItem targetItem, IReadOnlyList<Guid> itemIds, string displayName, CancellationToken cancellationToken)
     {
         var posterImages = new List<Image<Rgba32>>();
         try
@@ -228,12 +337,12 @@ public class CollectionSyncTask : IScheduledTask
                 return;
             }
 
-            using var cover = PosterGenerator.Create(posterImages, collectionName, "Letterboxd Collection");
+            using var cover = PosterGenerator.Create(posterImages, displayName, "Letterboxd Collection");
             using var stream = new MemoryStream();
             await cover.SaveAsJpegAsync(stream, cancellationToken).ConfigureAwait(false);
             stream.Position = 0;
 
-            await _providerManager.SaveImage(boxSet, stream, "image/jpeg", ImageType.Primary, null, cancellationToken).ConfigureAwait(false);
+            await _providerManager.SaveImage(targetItem, stream, "image/jpeg", ImageType.Primary, null, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
