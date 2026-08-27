@@ -8,6 +8,14 @@
     "category": "Metadata",
     "versions": [
       {
+        "version": "2.0.1.0",
+        "changelog": "Fix: verify a matched film's file actually exists on disk before accepting the match, instead of blindly taking Jellyfin's first title/year search result. Prevents silently matching a stale/orphaned duplicate library record over the real, playable one.",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/DarranS360/jellyfin-letterboxd-plugin/releases/download/v2.0.1.0/letterboxd-collections-2.0.1.0.zip",
+        "checksum": "ed64b11438c1cfe2e075c5dde0f637ee",
+        "timestamp": "2026-08-27T13:08:00.0000000Z"
+      },
+      {
         "version": "2.0.0.0",
         "changelog": "Sync to playlists (new default) or collections, plus a manual 'Run sync now' button on the plugin's settings page. Bumped AngleSharp to patch a moderate-severity advisory.",
         "targetAbi": "10.11.11.0",
