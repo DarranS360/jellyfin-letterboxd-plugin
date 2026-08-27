@@ -175,7 +175,8 @@ public class CollectionSyncTask : IScheduledTask
                 Years = film.Year.HasValue ? [film.Year.Value] : Array.Empty<int>()
             };
 
-            var match = _libraryManager.GetItemList(query).FirstOrDefault();
+            var candidates = _libraryManager.GetItemList(query);
+            var match = SelectPlayableCandidate(candidates, film.Title);
             if (match is not null)
             {
                 matchedIds.Add(match.Id);
@@ -189,6 +190,44 @@ public class CollectionSyncTask : IScheduledTask
             content.Films.Count);
 
         return matchedIds;
+    }
+
+    /// <summary>
+    /// A title/year match can return more than one library record - most commonly a
+    /// stale, orphaned entry left behind after a file was moved or re-encoded, alongside
+    /// the real, currently-playable one. Prefer whichever candidate's file actually
+    /// exists on disk, rather than blindly taking the first result Jellyfin returns.
+    /// </summary>
+    private BaseItem? SelectPlayableCandidate(IReadOnlyList<BaseItem> candidates, string title)
+    {
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        if (candidates.Count > 1)
+        {
+            _logger.LogWarning(
+                "Letterboxd Sync: '{Title}' matched {Count} library entries - checking which one is actually playable",
+                title,
+                candidates.Count);
+        }
+
+        var playable = candidates.FirstOrDefault(c => c.LocationType == LocationType.FileSystem && File.Exists(c.Path));
+        if (playable is not null)
+        {
+            return playable;
+        }
+
+        if (candidates.Count > 1)
+        {
+            _logger.LogWarning(
+                "Letterboxd Sync: none of the {Count} matches for '{Title}' have a file on disk - falling back to the first result, which may not be playable",
+                candidates.Count,
+                title);
+        }
+
+        return candidates[0];
     }
 
     private async Task SyncAsCollectionAsync(string collectionName, LetterboxdListContent content, Configuration.PluginConfiguration config, CancellationToken cancellationToken)
