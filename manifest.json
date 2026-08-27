@@ -2,11 +2,19 @@
   {
     "guid": "e09acb0e-a4b2-45b6-8081-554dbc761904",
     "name": "Letterboxd Collections",
-    "description": "Automatically creates and refreshes Jellyfin collections from a Letterboxd user's public lists and watchlist, on Jellyfin's own scheduled task runner.",
-    "overview": "Auto-syncs Letterboxd lists/watchlist into native Jellyfin collections",
+    "description": "Automatically creates and refreshes Jellyfin playlists or collections from a Letterboxd user's public lists and watchlist, on Jellyfin's own scheduled task runner.",
+    "overview": "Auto-syncs Letterboxd lists/watchlist into native Jellyfin playlists or collections",
     "owner": "DarranS360",
     "category": "Metadata",
     "versions": [
+      {
+        "version": "2.0.0.0",
+        "changelog": "Sync to playlists (new default) or collections, plus a manual 'Run sync now' button on the plugin's settings page. Bumped AngleSharp to patch a moderate-severity advisory.",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/DarranS360/jellyfin-letterboxd-plugin/releases/download/v2.0.0.0/letterboxd-collections-2.0.0.0.zip",
+        "checksum": "5caa887521f08fa0d23ab3035eaafc67",
+        "timestamp": "2026-08-27T12:37:00.0000000Z"
+      },
       {
         "version": "1.0.0.0",
         "changelog": "Initial release: auto-discovers Letterboxd lists and watchlist, creates/updates matching Jellyfin collections on Jellyfin's own scheduled task runner.",
